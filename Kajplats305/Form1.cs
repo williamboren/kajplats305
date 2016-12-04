@@ -42,18 +42,33 @@ namespace Kajplats305
             // release all resources used by the form
             loginDialog.Dispose();
 
-            LoadMessages(); // automatically load new messages after logging in
+            LoadMessages(true); // automatically load new messages after logging in
+            LoadUsers(); // automatically load users after logging in
         }
 
-        private void LoadMessages()
+        private void LoadMessages(bool allChats)
         {
             conn.Open(); // open a connection to the server
             // create a new mysql command
             MySqlCommand command = new MySqlCommand();
             command.Connection = conn; // set the connection for the command to the connection we created earlier
-            command.CommandText = "SELECT * FROM `Messages` WHERE `ToUser` = @username;"; // create the command
+            command.CommandText = allChats ? "SELECT * FROM `Messages` WHERE `ToUser` = @username AND `Received` = 0;" : "SELECT * FROM `Messages` WHERE `ToUser` = @username AND `FromUser` = @fromUser AND `Received` = 0;"; // create the command, one version is for loading messages from all users and the other for loading messages from one user only (active chat tab)
             command.Prepare(); // prepare a version of the command on the server (speeds up execution)
             command.Parameters.AddWithValue("@username", localUsername); // add a value to the parameter in the command
+            try
+            {
+                if (!allChats && tabControl1.SelectedTab.Name != "Start") command.Parameters.AddWithValue("@fromUser", tabControl1.SelectedTab.Name);
+            }
+            catch (NullReferenceException e)
+            {
+                MessageBox.Show("Var god och öppna en chatt för att hämta meddelanden.", "Error");
+            }
+
+            // update the receivedtime and received in the database
+            MySqlCommand commandResponse = new MySqlCommand();
+            commandResponse.Connection = conn;
+            commandResponse.CommandText = "UPDATE `Messages` SET `Received` = 1, `ReceivedTime = @currentTime WHERE `ID` = @id";
+            commandResponse.Prepare();
 
             MySqlDataReader reader = command.ExecuteReader(); // execute the command and store the return values in a datareader
 
@@ -61,11 +76,11 @@ namespace Kajplats305
             {
                 string from = reader["FromUser"].ToString(); // store the senders username in a string for easier access
 
-                // if the tab doesn't already exist, create it
-                if (tabControl1.TabPages[from] == null)
-                {
+                // if the tab doesn't already exist, create it (add a new tab for each message for now, need to figure out positioning...)
+               // if (tabControl1.TabPages[from] == null)
+                //{
                     tabControl1.TabPages.Add(from, from); // add a tab with the tabname and text set to the fromuser string
-                }
+                //}
 
                 TextBox message = new TextBox(); // create a new text box
                 message.Text = reader["Message"].ToString(); // set the text of the textbox to the received message
@@ -73,30 +88,68 @@ namespace Kajplats305
                 message.Enabled = false; // disable input from the user
                 message.BackColor = this.BackColor; // set the textbox backgroundcolor to the same as the main window
                 message.WordWrap = true;
-                message.Width = tabControl1.Width / 2; // set the width to 50% of the tab
+                message.Width = tabControl1.Width; // set the width to the same as the tab
 
                 tabControl1.TabPages[from].Controls.Add(message); // add the textbox to the tab
+
+                
+                commandResponse.Parameters.AddWithValue("@currentTime", DateTime.Now);
+                commandResponse.Parameters.AddWithValue("@ID", reader["ID"]);
+                commandResponse.ExecuteNonQuery();
             }
+
+            conn.Close(); // close the connection to the database
         }
 
         private void tabControl1_TabIndexChanged(object sender, EventArgs e)
         {
+            Console.WriteLine(tabControl1.SelectedTab.Name);
             // toggle visibillity of controls for sending messages based on selected tab
             if (tabControl1.SelectedTab.Name == "Start")
             {
-                messageInput.Visible = false;
-                sendMessageButton.Visible = false;
+                messageInput.Enabled = false;
+                sendMessageButton.Enabled = false;
             }
             else
             {
-                messageInput.Visible = true;
-                sendMessageButton.Visible = true;
+                messageInput.Enabled = true;
+                sendMessageButton.Enabled = true;
             }
+        }
+
+        private void LoadUsers()
+        {
+            // Check the comments for LoadMessages() for explanations on what's happening #lazy
+            conn.Open();
+            MySqlCommand command = new MySqlCommand();
+            command.Connection = conn;
+            command.CommandText = "SELECT `Username` FROM `Users`";
+            command.Prepare();
+            MySqlDataReader reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                Users.Items.Add(reader["Username"]); // add each username to the combobox
+            }
+
+            conn.Close();
         }
 
         private void getMessagesButton_Click(object sender, EventArgs e)
         {
-            LoadMessages();
+            LoadMessages(true);
+        }
+
+        private void getUsersButton_Click(object sender, EventArgs e)
+        {
+            LoadUsers();
+        }
+
+        private void StartChatButton_Click(object sender, EventArgs e)
+        {
+            tabControl1.TabPages.Add(Users.Items[Users.SelectedIndex].ToString(), Users.Items[Users.SelectedIndex].ToString()); // add a tab with the selected user
+            tabControl1.SelectTab(Users.Items[Users.SelectedIndex].ToString()); // select the recently created tab
+            LoadMessages(false); // get any messages from the user
         }
     }
 }
