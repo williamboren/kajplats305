@@ -154,6 +154,7 @@
             this.sendMessageButton.TabIndex = 3;
             this.sendMessageButton.Text = "Skicka Meddelande";
             this.sendMessageButton.UseVisualStyleBackColor = true;
+            this.sendMessageButton.Click += new System.EventHandler(this.sendMessageButton_Click);
             // 
             // getMessagesButton
             // 

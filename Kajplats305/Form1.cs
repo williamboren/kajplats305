@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
+using System.Text.RegularExpressions;
 
 namespace Kajplats305
 {
@@ -22,31 +23,99 @@ namespace Kajplats305
         static string connstring = "server=192.168.250.103;user id=kajplats;password=305;database=kajplats305";
         static string connstring2 = "server=127.0.0.1;user id=root;database=kajplats305";
         MySqlConnection conn = new MySqlConnection(connstring2);
-        string localUsername;
+        string localUsername, localFirstName, localLastName;
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            Login loginDialog = new Login();
-            // show the form as a dialog and determines the return value
-            if (loginDialog.ShowDialog(this) == DialogResult.OK)
-            {
-                // if it's OK then save the username and add the username to the title text
-                this.localUsername = loginDialog.UsernameTextBox.Text;
-                this.Text += this.localUsername;
-            }
-            else
-            {
-                // otherwise just show an error (technically it can't get here since theres no cancel button and I removed the exit button from the login form
-                MessageBox.Show("Error");
-            }
-            // release all resources used by the form
-            loginDialog.Dispose();
-
+            LogIn();
             LoadMessages(true); // automatically load new messages after logging in
             LoadUsers(); // automatically load users after logging in
         }
 
-        private void LoadMessages(bool allChats)
+        private void LogIn()
+        {
+            Login loginDialog = new Login();
+            conn.Open();
+            MySqlCommand command = new MySqlCommand();
+            command.Connection = conn;
+            DialogResult result = loginDialog.ShowDialog(this);
+            // show the form as a dialog and determines the return value
+            // DialogResults are a bit limited so I chose to use OK for logging in with an existing user and YES for creating a new one and logging in
+            if (result == DialogResult.OK)
+            {
+                // login
+                this.localUsername = loginDialog.UsernameTextBox.Text;
+                
+                command.CommandText = "SELECT `FirstName`, `LastName` FROM `Users` WHERE `Username` = @username;";
+                command.Prepare();
+                command.Parameters.AddWithValue("@username", this.localUsername);
+                MySqlDataReader reader = command.ExecuteReader();
+
+                if (reader.HasRows)
+                {
+                    while (reader.Read())
+                    {
+                        this.localFirstName = reader["FirstName"].ToString();
+                        this.localLastName = reader["LastName"].ToString();
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Användaren finns inte.");
+                    conn.Close();
+                    loginDialog.Dispose();
+                    LogIn();
+                }
+            }
+            else if (result == DialogResult.Yes)
+            {
+                // create new user
+                this.localUsername = loginDialog.UsernameTextBox.Text;
+                this.localLastName = loginDialog.LastNameTextBox.Text;
+                this.localFirstName = loginDialog.FirstNameTextBox.Text;
+                command.CommandText = "SELECT 1 FROM `Users` WHERE `Username` = @username;";
+                command.Prepare();
+                command.Parameters.AddWithValue("@username", this.localUsername);
+                MySqlDataReader reader = command.ExecuteReader();
+                if (!reader.HasRows)
+                {
+                    MySqlConnection con2 = (MySqlConnection)conn.Clone();
+                    MySqlCommand command2 = new MySqlCommand();
+                    con2.Open();
+                    command2.Connection = con2;
+                    command2.CommandText = "INSERT INTO `Users` (`Username`, `FirstName`, `LastName`) VALUES (@username, @firstName, @lastname);";
+                    command2.Prepare();
+                    command2.Parameters.AddWithValue("@username", this.localUsername);
+                    command2.Parameters.AddWithValue("@firstName", this.localFirstName);
+                    command2.Parameters.AddWithValue("@lastName", this.localLastName);
+                    command2.ExecuteNonQuery();
+                    con2.Close();
+                    command2.Dispose();
+                }
+                else
+                {
+                    MessageBox.Show("Användaren finns redan");
+                    conn.Close();
+                    loginDialog.Dispose();
+                    LogIn();
+                }
+                
+            }
+            else
+            {
+                // (technically it can't get here since theres no cancel button and I removed the exit button from the login form, hence just a lazy error message without any real information)
+                MessageBox.Show("Error");
+                conn.Close();
+                loginDialog.Dispose();
+                LogIn();
+            }
+            // release all resources used by the form
+            loginDialog.Dispose();
+            conn.Close();
+            this.Text += this.localUsername;
+        }
+
+        private void LoadMessages(bool allChats) // false to load messages from only the open tab and true to load all messages sent to the user
         {
             conn.Open(); // open a connection to the server
             // create a new mysql command
@@ -66,9 +135,13 @@ namespace Kajplats305
 
             // update the receivedtime and received in the database
             MySqlCommand commandResponse = new MySqlCommand();
-            commandResponse.Connection = conn;
-            commandResponse.CommandText = "UPDATE `Messages` SET `Received` = 1, `ReceivedTime = @currentTime WHERE `ID` = @id";
+            MySqlConnection conn2 = (MySqlConnection)conn.Clone();
+            conn2.Open();
+            commandResponse.Connection = conn2;
+            commandResponse.CommandText = "UPDATE `Messages` SET `Received` = 1, `ReceivedTime` = @currentTime WHERE `ID` = @id";
             commandResponse.Prepare();
+            commandResponse.Parameters.AddWithValue("@currentTime", DateTime.Now);
+            commandResponse.Parameters.AddWithValue("@id", 0);
 
             MySqlDataReader reader = command.ExecuteReader(); // execute the command and store the return values in a datareader
 
@@ -76,11 +149,11 @@ namespace Kajplats305
             {
                 string from = reader["FromUser"].ToString(); // store the senders username in a string for easier access
 
-                // if the tab doesn't already exist, create it (add a new tab for each message for now, need to figure out positioning...)
-               // if (tabControl1.TabPages[from] == null)
-                //{
+                // if the tab doesn't already exist, create it /*(add a new tab for each message for now, need to figure out positioning...)*/
+                if (tabControl1.TabPages[from] == null)
+                {
                     tabControl1.TabPages.Add(from, from); // add a tab with the tabname and text set to the fromuser string
-                //}
+                }
 
                 TextBox message = new TextBox(); // create a new text box
                 message.Text = reader["Message"].ToString(); // set the text of the textbox to the received message
@@ -88,17 +161,60 @@ namespace Kajplats305
                 message.Enabled = false; // disable input from the user
                 message.BackColor = this.BackColor; // set the textbox backgroundcolor to the same as the main window
                 message.WordWrap = true;
-                message.Width = tabControl1.Width; // set the width to the same as the tab
+                message.Width = tabControl1.Width - 10; // set the width to the same as the tab
+                Point msgLocation = new Point(0, 0), prevLocation; // the location to put the message at and one for the foreach loop further down
+
+                // if there are any children (textboxes) in the tabpage
+                if (tabControl1.TabPages[from].HasChildren)
+                {
+                    //Regex reg = new Regex("[0-9]");
+                    // temp solution '_>'
+                    Control[] children = new Control[100];
+                    for (int i = 0; i < tabControl1.TabPages[from].Controls.Count; i++)
+                    {
+                        Control[] tempArr = tabControl1.TabPages[from].Controls.Find(i.ToString(), true);
+                        foreach (Control temp in tempArr)
+                        {
+                            children[i] = temp;
+                        }
+                    }
+
+                    for (int i = 0; i < children.Length; i++)
+                    {
+                        if (children[i] == null) // avoid null exceptions
+                        {
+                            break;
+                        }
+                        else
+                        {
+                            prevLocation = children[i].Location;
+                            if (children[i].Location.Y > prevLocation.Y || children[i].Location.Y == prevLocation.Y)
+                            {
+                                msgLocation.Y = children[i].Height + 1; // move the new textbox below the current child
+                                message.Name = int.Parse(children[i].Name + 1).ToString();
+                            }
+                        }
+                        
+                    }
+                    message.Location = msgLocation; // give the textbox the new location
+                }
+                else
+                {
+                    message.Name = "0";
+                    message.Location = msgLocation;
+                }
 
                 tabControl1.TabPages[from].Controls.Add(message); // add the textbox to the tab
 
-                
-                commandResponse.Parameters.AddWithValue("@currentTime", DateTime.Now);
-                commandResponse.Parameters.AddWithValue("@ID", reader["ID"]);
-                commandResponse.ExecuteNonQuery();
+                // update the receivedtime and received values for each message retreived from the server 
+                commandResponse.Parameters["@currentTime"].Value = DateTime.Now;
+                commandResponse.Parameters["@id"].Value = reader["ID"];
+                // commandResponse.ExecuteNonQuery();
             }
 
             conn.Close(); // close the connection to the database
+            conn2.Close();
+            conn2.Dispose();
         }
 
         private void tabControl1_TabIndexChanged(object sender, EventArgs e)
@@ -140,6 +256,47 @@ namespace Kajplats305
             LoadMessages(true);
         }
 
+        private void sendMessageButton_Click(object sender, EventArgs e)
+        {
+            string message = messageInput.Text; // store the message to be sent in a variable for easier access
+            conn.Open();
+            MySqlCommand command = new MySqlCommand();
+            command.Connection = conn;
+            command.CommandText = "INSERT INTO `Messages` (`FromUser`, `ToUser`, `Message`, `SentTime`, `ReceivedTime`, `Received`) VALUES (@from, @to, @message, @time, NULL, 0);";
+            command.Prepare();
+            command.Parameters.AddWithValue("@from", this.localUsername);
+            command.Parameters.AddWithValue("@to", tabControl1.SelectedTab.Name);
+            command.Parameters.AddWithValue("@message", message);
+            command.Parameters.AddWithValue("@time", DateTime.Now);
+            try
+            {
+                command.ExecuteNonQuery();
+                TextBox sentMessage = new TextBox();
+                sentMessage.Text = message;
+                sentMessage.Multiline = true;
+                sentMessage.Enabled = false; // disable input from the user
+                sentMessage.BackColor = this.BackColor; // set the textbox backgroundcolor to the same as the main window
+                sentMessage.Visible = true;
+                sentMessage.WordWrap = true;
+                sentMessage.Width = tabControl1.Width - 10; // set the width to the same as the tab
+                sentMessage.Location = new Point(0, 140);
+                sentMessage.TextAlign = HorizontalAlignment.Right;
+                tabControl1.SelectedTab.Controls.Add(sentMessage);
+                tabControl1.TabPages[tabControl1.SelectedTab.Name].Controls.Add(sentMessage);
+                sentMessage.Show();
+                sentMessage.BringToFront();
+                messageInput.Clear();
+            }
+            catch (MySqlException ex)
+            {
+                MessageBox.Show(ex.Message, "Error");
+            }
+            finally
+            {
+                conn.Close();
+            }
+        }
+
         private void getUsersButton_Click(object sender, EventArgs e)
         {
             LoadUsers();
@@ -149,7 +306,7 @@ namespace Kajplats305
         {
             tabControl1.TabPages.Add(Users.Items[Users.SelectedIndex].ToString(), Users.Items[Users.SelectedIndex].ToString()); // add a tab with the selected user
             tabControl1.SelectTab(Users.Items[Users.SelectedIndex].ToString()); // select the recently created tab
-            LoadMessages(false); // get any messages from the user
+            LoadMessages(false); // get any unread messages from the user
         }
     }
 }

@@ -19,12 +19,32 @@ namespace Kajplats305
 
         private void Login_FormClosing(object sender, FormClosingEventArgs e)
         {
-            // if the user didn't enter a username, cancel closing the form and show a messagebox
-            if (UsernameTextBox.Text == string.Empty)
+            if (LoginButton.Enabled)
             {
-                e.Cancel = true;
-                MessageBox.Show("Please enter your username");
+                // if the user didn't enter a username, cancel closing the form and show a messagebox
+                if (UsernameTextBox.Text == string.Empty)
+                {
+                    e.Cancel = true;
+                    MessageBox.Show("Please enter your username");
+                }
             }
+            else
+            {
+                if (UsernameTextBox.Text == string.Empty || FirstNameTextBox.Text == string.Empty || LastNameTextBox.Text == string.Empty)
+                {
+                    e.Cancel = true;
+                    MessageBox.Show("Please enter your Username, First Name and Last Name");
+                }
+            }
+            
+        }
+
+        private void newUserButton_Click(object sender, EventArgs e)
+        {
+            LoginButton.Enabled = false;
+            newUserDoneButton.Visible = true;
+            FirstNameTextBox.Visible = true;
+            LastNameTextBox.Visible = true;
         }
     }
 }
