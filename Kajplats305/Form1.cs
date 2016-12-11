@@ -121,7 +121,7 @@ namespace Kajplats305
             // create a new mysql command
             MySqlCommand command = new MySqlCommand();
             command.Connection = conn; // set the connection for the command to the connection we created earlier
-            command.CommandText = allChats ? "SELECT * FROM `Messages` WHERE `ToUser` = @username AND `Received` = 0;" : "SELECT * FROM `Messages` WHERE `ToUser` = @username AND `FromUser` = @fromUser AND `Received` = 0;"; // create the command, one version is for loading messages from all users and the other for loading messages from one user only (active chat tab)
+            command.CommandText = allChats ? "SELECT * FROM `Messages` WHERE `ToUser` = @username AND `Received` = 0;" : "SELECT * FROM `Messages` WHERE `ToUser` = @username AND `FromUser` = @fromUser AND `Received` = 0;"; // create the command, one version is for loading messages from all users and the other for loading messages from one user only (active chat tab), conditional statements are awesome
             command.Prepare(); // prepare a version of the command on the server (speeds up execution)
             command.Parameters.AddWithValue("@username", localUsername); // add a value to the parameter in the command
             try
@@ -161,15 +161,30 @@ namespace Kajplats305
                 message.Enabled = false; // disable input from the user
                 message.BackColor = this.BackColor; // set the textbox backgroundcolor to the same as the main window
                 message.WordWrap = true;
-                message.Width = tabControl1.Width - 10; // set the width to the same as the tab
-                Point msgLocation = new Point(0, 0), prevLocation; // the location to put the message at and one for the foreach loop further down
+                message.Width = tabControl1.Width - 10; // set the width to fill the entire tab
+                Point msgLocation = new Point(0, 0), prevLocation; // the location to put the message at and one variable for the foreach loop further down
 
                 // if there are any children (textboxes) in the tabpage
                 if (tabControl1.TabPages[from].HasChildren)
                 {
-                    //Regex reg = new Regex("[0-9]");
+                    // Regex reg = new Regex("[0-9]");
                     // temp solution '_>'
                     Control[] children = new Control[100];
+
+                    /***********************************************************************************************************************
+                    I'm confused, it doesn't find any other TextBoxes then the first two, what the hell is wrong?????SDLKFJJSDKFJLSDKFJSDLKF
+                    ddlskfjdklsfjsdlkjfsdklfjsdlkfjsd whyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+                    what am I overlooking??????
+                    a
+                    a
+                    a
+                    a
+                    a
+                    a
+                    Och mormor gick bort inatt (11 dec) så kan inte fixa det eller implementera loggat ut och admin läge...
+                    ************************************************************************************************************************/
+
+                    // add all current controls from the appropriate tab to an array
                     for (int i = 0; i < tabControl1.TabPages[from].Controls.Count; i++)
                     {
                         Control[] tempArr = tabControl1.TabPages[from].Controls.Find(i.ToString(), true);
@@ -204,6 +219,7 @@ namespace Kajplats305
                     message.Location = msgLocation;
                 }
 
+                message.BringToFront();
                 tabControl1.TabPages[from].Controls.Add(message); // add the textbox to the tab
 
                 // update the receivedtime and received values for each message retreived from the server 
@@ -219,7 +235,6 @@ namespace Kajplats305
 
         private void tabControl1_TabIndexChanged(object sender, EventArgs e)
         {
-            Console.WriteLine(tabControl1.SelectedTab.Name);
             // toggle visibillity of controls for sending messages based on selected tab
             if (tabControl1.SelectedTab.Name == "Start")
             {
@@ -299,6 +314,7 @@ namespace Kajplats305
 
         private void getUsersButton_Click(object sender, EventArgs e)
         {
+            tabControl1.SelectedTab.Controls.Clear(); // remove message history
             LoadUsers();
         }
 
